@@ -1128,6 +1128,172 @@
 </script>
 
 <!-- ═══════════════════════════════════════════
+     3D MOUSE EFFECTS
+═══════════════════════════════════════════ -->
+<style>
+  /* ── CUSTOM CURSOR ── */
+  body { cursor: none; }
+  #cur-dot {
+    position:fixed; width:7px; height:7px; border-radius:50%;
+    background:#00d4ff; pointer-events:none; z-index:10000;
+    transform:translate(-50%,-50%);
+    box-shadow:0 0 10px #00d4ff, 0 0 22px rgba(0,212,255,0.5);
+    transition:width .18s, height .18s, background .18s, opacity .18s;
+    will-change:left,top;
+  }
+  #cur-ring {
+    position:fixed; width:34px; height:34px; border-radius:50%;
+    border:1.5px solid rgba(0,212,255,0.55);
+    pointer-events:none; z-index:9999;
+    transform:translate(-50%,-50%);
+    transition:width .25s, height .25s, border-color .25s, opacity .18s;
+    will-change:left,top;
+  }
+  #cur-dot.hover  { width:12px; height:12px; background:#8b5cf6;
+                    box-shadow:0 0 14px #8b5cf6, 0 0 28px rgba(139,92,246,0.5); }
+  #cur-ring.hover { width:52px; height:52px; border-color:rgba(139,92,246,0.7); }
+  #cur-dot.click  { transform:translate(-50%,-50%) scale(0.5); }
+
+  /* ── TRAIL PARTICLES ── */
+  .trail-pt {
+    position:fixed; width:5px; height:5px; border-radius:50%;
+    pointer-events:none; z-index:9997; transform:translate(-50%,-50%);
+  }
+
+  /* ── CLICK RIPPLE ── */
+  .click-ripple {
+    position:fixed; width:50px; height:50px; border-radius:50%;
+    border:1.5px solid #00d4ff; pointer-events:none; z-index:9996;
+    transform:translate(-50%,-50%) scale(0);
+  }
+
+  /* ── MAGNETIC BUTTONS ── */
+  .btn-primary, .btn-outline, .nav-hire {
+    transition:transform .35s cubic-bezier(.34,1.56,.64,1),
+               box-shadow .35s ease, background .2s, color .2s !important;
+  }
+</style>
+
+<!-- cursor DOM -->
+<div id="cur-dot"></div>
+<div id="cur-ring"></div>
+
+<script>
+(function(){
+  /* ── skip on touch devices ── */
+  if('ontouchstart' in window) return;
+
+  const dot  = document.getElementById('cur-dot');
+  const ring = document.getElementById('cur-ring');
+  let cx=0,cy=0, rx=0,ry=0, active=true;
+
+  /* position dot immediately */
+  document.addEventListener('mousemove', e=>{
+    cx=e.clientX; cy=e.clientY;
+    dot.style.left=cx+'px'; dot.style.top=cy+'px';
+  });
+  document.addEventListener('mouseleave', ()=>{ dot.style.opacity='0'; ring.style.opacity='0'; });
+  document.addEventListener('mouseenter', ()=>{ dot.style.opacity='1'; ring.style.opacity='1'; });
+
+  /* lag ring via rAF */
+  (function loop(){
+    rx+=(cx-rx)*0.13; ry+=(cy-ry)*0.13;
+    ring.style.left=rx+'px'; ring.style.top=ry+'px';
+    requestAnimationFrame(loop);
+  })();
+
+  /* hover state on interactive elements */
+  document.querySelectorAll('a,button,.cw-chip,.tag,.proj-card,.skill-cat,.stat,.edu-card').forEach(el=>{
+    el.addEventListener('mouseenter',()=>{ dot.classList.add('hover'); ring.classList.add('hover'); });
+    el.addEventListener('mouseleave',()=>{ dot.classList.remove('hover'); ring.classList.remove('hover'); });
+  });
+
+  /* click flash */
+  document.addEventListener('mousedown',()=>dot.classList.add('click'));
+  document.addEventListener('mouseup',  ()=>dot.classList.remove('click'));
+
+  /* ── TRAIL PARTICLES ── */
+  const COLORS=['#00d4ff','#8b5cf6','#00ff88'];
+  let lastTrail=0;
+  document.addEventListener('mousemove', e=>{
+    const now=Date.now();
+    if(now-lastTrail<55) return;
+    lastTrail=now;
+    const p=document.createElement('div');
+    p.className='trail-pt';
+    const col=COLORS[Math.floor(Math.random()*COLORS.length)];
+    p.style.cssText=`left:${e.clientX}px;top:${e.clientY}px;background:${col};box-shadow:0 0 8px ${col};`;
+    document.body.appendChild(p);
+    const dx=(Math.random()-.5)*50;
+    const dy=-Math.random()*55-15;
+    p.animate([
+      {transform:'translate(-50%,-50%) scale(1)',opacity:.85},
+      {transform:`translate(calc(-50% + ${dx}px),calc(-50% + ${dy}px)) scale(0)`,opacity:0}
+    ],{duration:700,easing:'ease-out'}).onfinish=()=>p.remove();
+  });
+
+  /* ── CLICK RIPPLE ── */
+  document.addEventListener('click', e=>{
+    const r=document.createElement('div');
+    r.className='click-ripple';
+    r.style.left=e.clientX+'px'; r.style.top=e.clientY+'px';
+    document.body.appendChild(r);
+    r.animate([
+      {transform:'translate(-50%,-50%) scale(0)',opacity:.9,borderColor:'#00d4ff'},
+      {transform:'translate(-50%,-50%) scale(4)',opacity:0, borderColor:'rgba(0,212,255,0)'}
+    ],{duration:650,easing:'ease-out'}).onfinish=()=>r.remove();
+  });
+
+  /* ── HERO DEPTH PARALLAX ── */
+  const hero = document.getElementById('hero');
+  const parallaxLayers = [
+    {sel:'.orbit-wrap',  depth:.05},
+    {sel:'.open-badge',  depth:.032},
+    {sel:'.hero-eye',    depth:.024},
+    {sel:'.hero-name',   depth:.016},
+    {sel:'.hero-role',   depth:.010},
+    {sel:'.hero-desc',   depth:.006},
+    {sel:'.hero-btns',   depth:.004},
+  ].map(l=>({ el:hero.querySelector(l.sel), depth:l.depth })).filter(l=>l.el);
+
+  let heroActive=false;
+  hero.addEventListener('mouseenter',()=>heroActive=true);
+  hero.addEventListener('mouseleave',()=>{
+    heroActive=false;
+    parallaxLayers.forEach(({el})=>{
+      el.style.transition='transform .8s cubic-bezier(.25,1,.5,1)';
+      el.style.transform='translate(0px,0px)';
+      setTimeout(()=>{ el.style.transition=''; },850);
+    });
+  });
+  hero.addEventListener('mousemove', e=>{
+    if(!heroActive) return;
+    const r=hero.getBoundingClientRect();
+    const ox=(e.clientX-r.left-r.width/2);
+    const oy=(e.clientY-r.top -r.height/2);
+    parallaxLayers.forEach(({el,depth})=>{
+      el.style.transform=`translate(${ox*depth}px,${oy*depth}px)`;
+    });
+  });
+
+  /* ── MAGNETIC BUTTONS ── */
+  document.querySelectorAll('.btn-primary,.btn-outline,.nav-hire').forEach(btn=>{
+    btn.addEventListener('mousemove', e=>{
+      const r=btn.getBoundingClientRect();
+      const x=(e.clientX-r.left-r.width/2)*0.28;
+      const y=(e.clientY-r.top -r.height/2)*0.28;
+      btn.style.transform=`translate(${x}px,${y}px)`;
+    });
+    btn.addEventListener('mouseleave',()=>{
+      btn.style.transition='transform .45s cubic-bezier(.34,1.56,.64,1)';
+      btn.style.transform='';
+      setTimeout(()=>btn.style.transition='',460);
+    });
+  });
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════
      AI CHAT WIDGET
 ═══════════════════════════════════════════ -->
 <style>

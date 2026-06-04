@@ -859,5 +859,513 @@
   }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
   document.querySelectorAll('.reveal, .t-item').forEach(el => io.observe(el));
 </script>
+
+<!-- ═══════════════════════════════════════════
+     AI CHAT WIDGET
+═══════════════════════════════════════════ -->
+<style>
+  /* ── WIDGET SHELL ── */
+  #cw-wrap {
+    position: fixed; bottom: 2rem; right: 2rem; z-index: 999;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 1rem;
+  }
+
+  /* ── TOGGLE BUTTON ── */
+  #cw-btn {
+    width: 62px; height: 62px; border-radius: 50%;
+    background: linear-gradient(135deg, #00d4ff, #8b5cf6);
+    border: none; cursor: pointer; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 0 0 rgba(0,212,255,0.5);
+    animation: cwPulse 2.5s ease-in-out infinite;
+    transition: transform .2s;
+  }
+  #cw-btn:hover { transform: scale(1.08); }
+  #cw-btn svg  { width: 26px; height: 26px; fill: #fff; transition: transform .3s; }
+  #cw-btn.open svg { transform: rotate(90deg); }
+  @keyframes cwPulse {
+    0%   { box-shadow: 0 0 0 0   rgba(0,212,255,.5); }
+    70%  { box-shadow: 0 0 0 16px rgba(0,212,255,0); }
+    100% { box-shadow: 0 0 0 0   rgba(0,212,255,0); }
+  }
+  .cw-tip {
+    position: absolute; right: 72px; top: 50%; transform: translateY(-50%);
+    background: rgba(6,12,23,.92); border: 1px solid rgba(0,212,255,.3);
+    color: #00d4ff; font-family: 'JetBrains Mono', monospace;
+    font-size: .72rem; padding: .3rem .7rem; border-radius: 6px;
+    white-space: nowrap; pointer-events: none; letter-spacing: 1px;
+    animation: cwTipFade 4s ease-in-out infinite;
+  }
+  .cw-tip::after {
+    content: ''; position: absolute; left: 100%; top: 50%;
+    transform: translateY(-50%);
+    border: 5px solid transparent; border-left-color: rgba(0,212,255,.3);
+  }
+  @keyframes cwTipFade { 0%,100%{opacity:0} 20%,80%{opacity:1} }
+
+  /* ── PANEL ── */
+  #cw-panel {
+    width: 370px;
+    background: rgba(6,12,23,.96);
+    backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(0,212,255,.18);
+    border-radius: 20px;
+    box-shadow: 0 25px 70px rgba(0,0,0,.6), 0 0 40px rgba(0,212,255,.08);
+    display: flex; flex-direction: column; overflow: hidden;
+    transform: scale(.85) translateY(20px);
+    opacity: 0; pointer-events: none;
+    transition: all .35s cubic-bezier(.34,1.56,.64,1);
+    max-height: 540px;
+  }
+  #cw-panel.open {
+    transform: scale(1) translateY(0);
+    opacity: 1; pointer-events: all;
+  }
+
+  /* ── HEADER ── */
+  #cw-head {
+    display: flex; align-items: center; gap: .75rem;
+    padding: .9rem 1.1rem;
+    background: linear-gradient(135deg, rgba(0,212,255,.08), rgba(139,92,246,.08));
+    border-bottom: 1px solid rgba(0,212,255,.12);
+    flex-shrink: 0;
+  }
+  .cw-avt {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: linear-gradient(135deg, #00d4ff, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 900; font-size: .85rem; color: #fff;
+    flex-shrink: 0; letter-spacing: 1px;
+    box-shadow: 0 0 12px rgba(0,212,255,.4);
+  }
+  .cw-head-info { flex: 1; }
+  .cw-head-name { font-weight: 700; font-size: .9rem; color: #e2e8f0; }
+  .cw-head-status {
+    font-size: .72rem; color: #00ff88;
+    font-family: 'JetBrains Mono', monospace; letter-spacing: 1px;
+    display: flex; align-items: center; gap: .3rem;
+  }
+  .cw-head-status::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: #00ff88; animation: cwBlink 1.5s ease-in-out infinite;
+  }
+  @keyframes cwBlink { 0%,100%{opacity:1} 50%{opacity:.3} }
+  #cw-close {
+    background: none; border: none; cursor: pointer;
+    color: #64748b; font-size: 1.1rem; transition: color .2s;
+    padding: .25rem;
+  }
+  #cw-close:hover { color: #00d4ff; }
+
+  /* ── MESSAGES ── */
+  #cw-msgs {
+    flex: 1; overflow-y: auto; padding: 1rem;
+    display: flex; flex-direction: column; gap: .9rem;
+    scroll-behavior: smooth; min-height: 280px; max-height: 320px;
+  }
+  #cw-msgs::-webkit-scrollbar { width: 4px; }
+  #cw-msgs::-webkit-scrollbar-track { background: transparent; }
+  #cw-msgs::-webkit-scrollbar-thumb { background: rgba(0,212,255,.2); border-radius: 2px; }
+
+  /* ── COMIC BUBBLES ── */
+  .cw-row { display: flex; align-items: flex-end; gap: .5rem; }
+  .cw-row.bot { flex-direction: row; }
+  .cw-row.usr { flex-direction: row-reverse; }
+
+  .cw-bubble {
+    max-width: 82%; padding: .65rem .9rem;
+    font-size: .875rem; line-height: 1.55;
+    position: relative; word-break: break-word;
+  }
+  /* BOT bubble — comic left tail */
+  .cw-bubble.bot {
+    background: rgba(0,212,255,.07);
+    border: 2px solid rgba(0,212,255,.35);
+    border-radius: 16px 16px 16px 4px;
+    color: #e2e8f0;
+    box-shadow: 0 0 18px rgba(0,212,255,.08), inset 0 0 20px rgba(0,212,255,.03);
+  }
+  .cw-bubble.bot::before {
+    content: ''; position: absolute;
+    left: -9px; bottom: 8px;
+    border: 7px solid transparent;
+    border-right: 9px solid rgba(0,212,255,.35);
+    filter: drop-shadow(-2px 0 2px rgba(0,212,255,.1));
+  }
+  .cw-bubble.bot::after {
+    content: ''; position: absolute;
+    left: -6px; bottom: 9px;
+    border: 6px solid transparent;
+    border-right: 8px solid rgba(0,212,255,.07);
+  }
+  /* USER bubble — comic right tail */
+  .cw-bubble.usr {
+    background: linear-gradient(135deg, rgba(0,212,255,.15), rgba(139,92,246,.15));
+    border: 2px solid rgba(139,92,246,.4);
+    border-radius: 16px 16px 4px 16px;
+    color: #e2e8f0;
+    box-shadow: 0 0 18px rgba(139,92,246,.1);
+  }
+  .cw-bubble.usr::before {
+    content: ''; position: absolute;
+    right: -9px; bottom: 8px;
+    border: 7px solid transparent;
+    border-left: 9px solid rgba(139,92,246,.4);
+  }
+  .cw-bubble.usr::after {
+    content: ''; position: absolute;
+    right: -6px; bottom: 9px;
+    border: 6px solid transparent;
+    border-left: 8px solid rgba(139,92,246,.15);
+  }
+
+  .cw-mini-avt {
+    width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    background: linear-gradient(135deg, #00d4ff, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: .55rem; font-weight: 900; color: #fff; letter-spacing: 1px;
+  }
+
+  /* TYPING indicator */
+  .cw-typing { display: flex; gap: 4px; padding: .55rem .75rem; }
+  .cw-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: #00d4ff; opacity: .5;
+    animation: cwDot .9s ease-in-out infinite;
+  }
+  .cw-dot:nth-child(2) { animation-delay: .18s; }
+  .cw-dot:nth-child(3) { animation-delay: .36s; }
+  @keyframes cwDot { 0%,80%,100%{transform:scale(1);opacity:.4} 40%{transform:scale(1.4);opacity:1} }
+
+  /* ── QUICK REPLIES ── */
+  #cw-qr {
+    padding: .5rem 1rem .65rem;
+    display: flex; flex-wrap: wrap; gap: .45rem;
+    flex-shrink: 0; border-top: 1px solid rgba(0,212,255,.07);
+  }
+  .cw-chip {
+    padding: .32rem .82rem;
+    background: rgba(0,212,255,.06);
+    border: 1px solid rgba(0,212,255,.25);
+    border-radius: 20px; color: #94a3b8;
+    font-size: .75rem; cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    transition: all .22s cubic-bezier(.34,1.56,.64,1);
+    position: relative; overflow: hidden;
+  }
+  .cw-chip::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(0,212,255,.15), rgba(139,92,246,.15));
+    opacity: 0; transition: opacity .22s;
+  }
+  .cw-chip:hover {
+    border-color: #00d4ff; color: #00d4ff;
+    transform: translateY(-3px) scale(1.04);
+    box-shadow: 0 8px 22px rgba(0,212,255,.25), 0 0 0 1px rgba(0,212,255,.15);
+  }
+  .cw-chip:hover::before { opacity: 1; }
+  .cw-chip:active { transform: translateY(-1px) scale(1.01); }
+
+  /* ── INPUT ── */
+  #cw-input-row {
+    display: flex; gap: .5rem; padding: .65rem 1rem .9rem;
+    flex-shrink: 0; border-top: 1px solid rgba(0,212,255,.07);
+  }
+  #cw-input {
+    flex: 1; background: rgba(255,255,255,.04);
+    border: 1px solid rgba(0,212,255,.18); border-radius: 10px;
+    padding: .52rem .85rem; color: #e2e8f0; font-size: .85rem;
+    font-family: 'Inter', sans-serif; outline: none; transition: border .2s;
+  }
+  #cw-input::placeholder { color: #475569; }
+  #cw-input:focus { border-color: rgba(0,212,255,.45); box-shadow: 0 0 0 3px rgba(0,212,255,.08); }
+  #cw-send {
+    width: 38px; height: 38px; border-radius: 10px; border: none; cursor: pointer;
+    background: linear-gradient(135deg, #00d4ff, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    transition: all .2s; flex-shrink: 0;
+  }
+  #cw-send:hover { transform: scale(1.08); box-shadow: 0 4px 16px rgba(0,212,255,.35); }
+  #cw-send svg { width: 16px; height: 16px; fill: #fff; }
+
+  @media(max-width:440px){
+    #cw-panel { width: calc(100vw - 2rem); }
+    #cw-wrap  { right: 1rem; bottom: 1rem; }
+  }
+</style>
+
+<div id="cw-wrap">
+  <div id="cw-panel" role="dialog" aria-label="Chat with Brent's AI assistant">
+    <div id="cw-head">
+      <div class="cw-avt">BC</div>
+      <div class="cw-head-info">
+        <div class="cw-head-name">Brent's AI Assistant</div>
+        <div class="cw-head-status">Online &amp; Ready</div>
+      </div>
+      <button id="cw-close" aria-label="Close chat">✕</button>
+    </div>
+    <div id="cw-msgs" aria-live="polite"></div>
+    <div id="cw-qr"></div>
+    <div id="cw-input-row">
+      <input id="cw-input" type="text" placeholder="Ask me anything about Brent..." autocomplete="off" maxlength="200">
+      <button id="cw-send" aria-label="Send">
+        <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <button id="cw-btn" aria-label="Open chat">
+    <span class="cw-tip">// Ask me anything</span>
+    <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z"/></svg>
+  </button>
+</div>
+
+<script>
+(function(){
+  /* ── KNOWLEDGE BASE ── */
+  const KB = [
+    {
+      id:'greeting',
+      patterns:['hi','hello','hey','sup','yo','howdy','what\'s up','whats up','good'],
+      response:"Hey! 👋 I'm Brent's AI assistant. I can answer any questions about his skills, experience, projects, or how to get in touch. What would you like to know?",
+      chips:['Who is Brent?','Current job?','What can he build?','How to hire him?']
+    },
+    {
+      id:'about',
+      patterns:['who','about','brent','person','himself','tell me','background','he like','is he'],
+      response:"Brent Cowan is a Full Stack Developer & Ethical Hacker based in Santa Clarita, CA. 🛡️💻\n\nHe brings the builder AND the breaker mindset to every project — shipping clean production code, then stress-testing it for vulnerabilities. He's worked across React frontends, Node.js APIs, AWS, and penetration testing with Kali Linux. Currently open to Full Stack, Security, and Entrepreneur roles.",
+      chips:['See his experience','What skills does he have?','Is he available to hire?','Contact him']
+    },
+    {
+      id:'skills',
+      patterns:['skill','tech','stack','know','language','framework','tool','use','build','code','program','develop','react','node','javascript','js','css','html','tailwind','api','aws','sql','mysql','python'],
+      response:"Brent's full tech stack:\n\n🖥️ Frontend — React.js, JavaScript, HTML5, CSS3, Tailwind CSS\n⚙️ Backend — Node.js, REST APIs, JSON, Chatbot Dev\n🗄️ Database & Cloud — MySQL, SQL, AWS, MySQL Workbench\n🛡️ Security — Kali Linux, Wireshark, Ethical Hacking, Bug Bounty, TryHackMe, Pen Testing\n\nBoth his Full Stack and Ethical Hacker certifications came with perfect 100% scores.",
+      chips:['Frontend details','Security & hacking','Cloud & databases','View education']
+    },
+    {
+      id:'frontend',
+      patterns:['frontend','front end','front-end','react','javascript','html','css','tailwind','ui','interface','design'],
+      response:"On the frontend Brent works primarily with:\n\n⚛️ React.js — component architecture & hooks\n📜 JavaScript — ES6+, async/await, APIs\n🎨 Tailwind CSS — utility-first styling\n🖌️ HTML5 + CSS3 — semantic markup & animations\n\nHe's shipped production frontends for HoneyInk, A Scarlet Cord, and his own digital projects.",
+      chips:['Backend skills?','See projects','Hire for frontend','Contact Brent']
+    },
+    {
+      id:'security',
+      patterns:['secur','hack','ethical','kali','wireshark','pentest','pen test','bug bounty','vuln','ctf','tryhackme','cyber','infosec','exploit','recon'],
+      response:"Brent is a certified Ethical Hacker (Cuesta College, 100% grade) specializing in:\n\n🔍 Penetration Testing — network & web app\n🐉 Kali Linux — full offensive toolkit\n📡 Wireshark — packet analysis & network forensics\n🎯 Bug Bounty — active recon pipelines & automation\n🏴 TryHackMe — ongoing CTF & challenge labs\n\nHe's also built custom Python security tools for scanning and recon automation.",
+      chips:['See security projects','Full stack skills too?','Education & certs','Get in touch']
+    },
+    {
+      id:'experience',
+      patterns:['experience','work','job','career','employ','history','worked','position','role','company','place'],
+      response:"Brent has 5+ years of professional experience across 3 contracts:\n\n🟢 HoneyInk (May 2024–Present) — Software Developer. Front-end dev, advertising tech, React & AWS.\n\n🔵 A Scarlet Cord (May 2023–Jan 2025) — Software Developer. APIs, React, Tailwind, Squarespace.\n\n🔵 B.E Vision Tech (Nov 2020–Apr 2025) — Chatbot Developer. Led chatbot projects end-to-end, JavaScript, Node.js.",
+      chips:['HoneyInk details','Scarlet Cord project','Chatbot work','Education']
+    },
+    {
+      id:'honeyink',
+      patterns:['honeyink','honey ink','honey','current','now','present','latest'],
+      response:"Brent's current role is Software Developer at HoneyInk (May 2024–Present) on a contract basis in California.\n\nHe builds innovative software solutions including front-end development, advertising technology integrations, and advanced CSS/React work. HoneyInk leverages his full-stack expertise across the board.",
+      chips:['Previous jobs?','What skills here?','Other projects','Contact Brent']
+    },
+    {
+      id:'scarletcord',
+      patterns:['scarlet','cord','scarletcord'],
+      response:"At A Scarlet Cord (May 2023–Jan 2025) Brent worked as a Software Developer, building:\n\n🔗 RESTful API integrations\n⚛️ Responsive React UI components\n📦 JSON data pipelines\n🎨 Tailwind CSS styled interfaces\n🛒 Squarespace customizations\n\nHe also built a full project website for the organization — still live today.",
+      chips:['See the project','HoneyInk role?','Other experience','Skills used']
+    },
+    {
+      id:'chatbot',
+      patterns:['chatbot','chat bot','be vision','vision tech','bot','conversational','ai bot'],
+      response:"At B.E Vision Tech (Nov 2020–Apr 2025) Brent led the chatbot development division:\n\n🤖 Designed & built chatbots from scratch\n⚡ Architected the conversation flow engine\n🔌 JavaScript + Node.js API integrations\n👥 Led the development team\n🚀 Deployed API-connected bots to production\n\nHe ran this project for 4.5 years — a long-term ownership role.",
+      chips:['See all experience','What else can he do?','Security skills','Hire him']
+    },
+    {
+      id:'education',
+      patterns:['education','school','degree','cert','study','college','university','learn','bethel','cuesta','graduate','grade'],
+      response:"Brent holds two certifications — both with perfect scores:\n\n🎓 Full Stack Developer — Bethel School of Technology\nFeb 2022–Feb 2023 · Computer Software Engineering · Grade: 100%\n\n🛡️ Ethical Hacker — Cuesta College\nNov 2024–Apr 2025 · Cyber/Electronic Operations & Warfare · Grade: 100% (A)\n\nPerfect scores across the board — he doesn't just study it, he masters it.",
+      chips:['What skills did he learn?','See projects','Is he available?','Contact']
+    },
+    {
+      id:'projects',
+      patterns:['project','built','portfolio','work','site','website','app','application','show','demo','example'],
+      response:"Brent's shipped projects include:\n\n⛪ WHCO.life — Full church website for World Harvest Christian Outreach (Lancaster, CA). Built end-to-end.\n\n🤖 Chatbot Platform — B.E Vision Tech. Built and led 4+ years of chatbot dev.\n\n🔴 A Scarlet Cord — React + API-driven web project with full Tailwind UI.\n\n🛡️ Security Toolkit — Bug bounty automation, recon scripts, TryHackMe tooling in Python/Kali.",
+      chips:['Visit WHCO.life','Security projects','Scarlet Cord site','See all skills']
+    },
+    {
+      id:'whco',
+      patterns:['whco','church','world harvest','christian','outreach','lancaster'],
+      response:"Brent built the full website for World Harvest Christian Outreach — a church in Lancaster, CA. 🙏\n\nHe handled everything: design, development, and deployment — giving the congregation a modern digital presence. You can visit it live at whco.life",
+      chips:['Other projects?','Full tech stack','How to hire?','Contact']
+    },
+    {
+      id:'available',
+      patterns:['available','availab','hire','open','looking','job','work','recruit','opportun','position','role','freelance','contract'],
+      response:"Yes! Brent is actively open to work. 🟢\n\nHe's seeking roles in:\n✅ Full Stack Engineering\n✅ Ethical Hacking / Security\n✅ Entrepreneur / Technical Co-founder\n\nHe's based in Santa Clarita, CA and open to both remote and local opportunities. Best way to reach him is through the contact section or LinkedIn.",
+      chips:['Contact him now','See his LinkedIn','What\'s his stack?','View projects']
+    },
+    {
+      id:'contact',
+      patterns:['contact','reach','email','message','connect','linkedin','github','get in touch','talk','hire','dm','touch'],
+      response:"You can reach Brent through:\n\n📧 brentcowan2021@gmail.com\n💼 LinkedIn — /in/brent-cowan-8686581a4\n🐙 GitHub — github.com/SirBrently\n🌐 whco.life (church project)\n\nHe's open to work and responds quickly. Don't hesitate to reach out!",
+      chips:['Is he available?','See his projects','What are his skills?','Back to start']
+    },
+    {
+      id:'location',
+      patterns:['locat','where','city','state','california','ca','remote','santa clarita','la','los angeles','reloc'],
+      response:"Brent is based in Santa Clarita, California (greater LA area). 📍\n\nHe's open to both remote and on-site opportunities in the region. If you need someone who can come in-person or work fully remote, he can accommodate either.",
+      chips:['Is he available?','Contact him','See his skills','His projects']
+    },
+    {
+      id:'salary',
+      patterns:['salary','pay','rate','compensation','money','cost','charge','price','hourly','annum','budget'],
+      response:"Brent prefers to discuss compensation directly — that way it's tailored to the role, scope, and your team's needs.\n\nBest to reach out directly via email or LinkedIn to start that conversation. 📬",
+      chips:['Contact him','See his LinkedIn','Is he available?','What can he do?']
+    },
+    {
+      id:'strengths',
+      patterns:['strength','strong','best','great','good at','excel','specialty','specializ','unique','differ','stand out','value'],
+      response:"What makes Brent stand out:\n\n🔐 He's both a builder and a breaker — he ships secure code because he knows how to attack it.\n\n🏆 Perfect grades in both Full Stack Dev and Ethical Hacking.\n\n🤝 Real-world contract experience across 3 companies simultaneously.\n\n⚡ Full-stack ownership — React to Node.js to AWS to MySQL, he ships the whole thing.\n\n🎯 Self-driven — built security tools, bug bounty pipelines, and church sites on his own initiative.",
+      chips:['See his experience','View projects','His education','How to hire him?']
+    },
+    {
+      id:'team',
+      patterns:['team','collabor','work with','group','agile','scrum','manage','lead','together'],
+      response:"Brent has strong team experience:\n\n👥 Led the chatbot dev team at B.E Vision Tech for 4+ years\n🤝 Collaborated with designers and stakeholders at HoneyInk and Scarlet Cord\n📋 Experience with contract-based cross-functional teams\n\nHe's comfortable leading, following, or working independently.",
+      chips:['See his experience','Contact him','All his skills','Hire him']
+    },
+    {
+      id:'fallback',
+      patterns:[],
+      response:"Hmm, I'm not sure about that one — I'm scoped to Brent's professional background. 🤔\n\nTry asking about his skills, experience, projects, education, or how to contact him. Or just pick one of the options below!",
+      chips:['Who is Brent?','His skills','Experience','How to contact?']
+    }
+  ];
+
+  /* ── DOM REFS ── */
+  const panel  = document.getElementById('cw-panel');
+  const btn    = document.getElementById('cw-btn');
+  const close  = document.getElementById('cw-close');
+  const msgs   = document.getElementById('cw-msgs');
+  const qr     = document.getElementById('cw-qr');
+  const input  = document.getElementById('cw-input');
+  const send   = document.getElementById('cw-send');
+
+  let isOpen = false, typing = false;
+
+  /* ── TOGGLE ── */
+  function toggle(){
+    isOpen = !isOpen;
+    panel.classList.toggle('open', isOpen);
+    btn.classList.toggle('open', isOpen);
+    if(isOpen && msgs.children.length === 0) greet();
+    if(isOpen) setTimeout(()=>input.focus(), 350);
+  }
+  btn.addEventListener('click', toggle);
+  close.addEventListener('click', toggle);
+
+  /* ── MATCH ── */
+  function match(text){
+    const t = text.toLowerCase().trim();
+    let best = null, bestScore = 0;
+    for(const topic of KB){
+      if(!topic.patterns.length) continue;
+      let score = 0;
+      for(const p of topic.patterns){ if(t.includes(p)) score++; }
+      if(score > bestScore){ bestScore = score; best = topic; }
+    }
+    return best || KB[KB.length-1];
+  }
+
+  /* ── RENDER CHIPS ── */
+  function setChips(chips){
+    qr.innerHTML = '';
+    chips.forEach(label=>{
+      const c = document.createElement('button');
+      c.className = 'cw-chip';
+      c.textContent = label;
+      c.addEventListener('click', ()=>{ sendMsg(label); });
+      qr.appendChild(c);
+    });
+  }
+
+  /* ── ADD MESSAGE ── */
+  function addMsg(text, side){
+    const row = document.createElement('div');
+    row.className = `cw-row ${side}`;
+    if(side==='bot'){
+      const avt = document.createElement('div');
+      avt.className='cw-mini-avt'; avt.textContent='BC';
+      row.appendChild(avt);
+    }
+    const bub = document.createElement('div');
+    bub.className = `cw-bubble ${side}`;
+    bub.style.whiteSpace = 'pre-wrap';
+    row.appendChild(bub);
+    msgs.appendChild(row);
+    msgs.scrollTop = msgs.scrollHeight;
+    return bub;
+  }
+
+  /* ── TYPEWRITER ── */
+  function typewrite(bub, text, cb){
+    let i=0;
+    function tick(){
+      if(i<=text.length){ bub.textContent=text.slice(0,i++); msgs.scrollTop=msgs.scrollHeight; setTimeout(tick, i<8?0:14); }
+      else if(cb) cb();
+    }
+    tick();
+  }
+
+  /* ── TYPING INDICATOR ── */
+  function showTyping(){
+    const row=document.createElement('div'); row.className='cw-row bot'; row.id='cw-typing-row';
+    const avt=document.createElement('div'); avt.className='cw-mini-avt'; avt.textContent='BC';
+    const bub=document.createElement('div'); bub.className='cw-bubble bot';
+    const ind=document.createElement('div'); ind.className='cw-typing';
+    [1,2,3].forEach(()=>{ const d=document.createElement('div'); d.className='cw-dot'; ind.appendChild(d); });
+    bub.appendChild(ind); row.appendChild(avt); row.appendChild(bub);
+    msgs.appendChild(row); msgs.scrollTop=msgs.scrollHeight;
+  }
+  function hideTyping(){ const r=document.getElementById('cw-typing-row'); if(r) r.remove(); }
+
+  /* ── BOT REPLY ── */
+  function botReply(topic, delay=900){
+    if(typing) return;
+    typing=true; setChips([]);
+    showTyping();
+    setTimeout(()=>{
+      hideTyping();
+      const bub=addMsg('','bot');
+      typewrite(bub, topic.response, ()=>{
+        typing=false;
+        setChips(topic.chips);
+      });
+    }, delay);
+  }
+
+  /* ── SEND MESSAGE ── */
+  function sendMsg(text){
+    text=text.trim(); if(!text||typing) return;
+    addMsg(text,'usr');
+    input.value='';
+    const topic=match(text);
+    botReply(topic, 750);
+  }
+
+  /* ── GREETING ── */
+  function greet(){
+    setTimeout(()=>{
+      const bub=addMsg('','bot');
+      typewrite(bub,"Hey there! 👋 I'm Brent's AI — I know everything about his skills, experience, and projects. Ask me anything or pick a topic below:", ()=>{
+        setChips(['Who is Brent?','Skills & Tech Stack','Work Experience','Projects','How to Hire Him?']);
+      });
+    }, 400);
+  }
+
+  /* ── EVENTS ── */
+  send.addEventListener('click', ()=>sendMsg(input.value));
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') sendMsg(input.value); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape'&&isOpen) toggle(); });
+})();
+</script>
 </body>
 </html>
